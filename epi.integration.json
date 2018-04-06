@@ -1,0 +1,42 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "environment": {
+            "value": "int"
+        },
+        "environmentName": {
+            "value": "Integration"
+        },      
+        "resource.sqlAdministratorPassword": {
+            "value": "myPassword123!"
+        },
+        "resource.sku.tier": {
+            "value": "Standard"
+        },
+        "resource.sku.size": {
+            "value": "S2"
+        },
+        "resource.workerSize": {
+            "value": "2"
+        },
+        "siteConfig.alwaysOn": {
+            "value": true
+        },
+        "search.replicaCount":{
+            "value": 1
+        },
+        "search.partitionCount":{
+            "value": 1
+        },
+        "search.hostingMode":{
+            "value": "default"
+        },
+        "aadInstance":{
+            "value": "https://login.microsoftonline.com/<tenant>"
+        },
+        "aadClientId":{
+            "value": "<appid>"
+        }
+    }
+}

@@ -1,0 +1,293 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "appName": {
+            "type": "string"
+        },
+        "environment": {
+            "type": "string"
+        },
+        "environmentName": {
+            "type": "string"
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "westeurope"
+        },
+        "resource.sqlAdministratorPassword": {
+            "type": "securestring"
+        },
+        "resource.sku.tier": {
+            "type": "string",
+            "allowedValues": [
+                "Free",
+                "Shared",
+                "Basic",
+                "Standard"
+            ],
+            "defaultValue": "Free"
+        },
+        "resource.sku.size": {
+            "type": "string",
+            "defaultValue": "F"
+        },
+        "resource.workerSize": {
+            "type": "string",
+            "allowedValues": [
+                "0",
+                "1",
+                "2"
+            ],
+            "defaultValue": "0"
+        },
+        "siteConfig.alwaysOn":{
+            "type": "bool",
+            "defaultValue": false
+        },
+        "siteConfig.webSocketsEnabled":{
+            "type": "bool",
+            "defaultValue": true
+        },
+        "siteConfig.use32BitWorkerProcess":{
+            "type": "bool",
+            "defaultValue": false
+        },
+        "search.replicaCount":{
+            "type": "int",
+            "minValue": 1,
+            "maxValue": 12,
+            "defaultValue": 1,
+            "metadata": {
+                "description": "Replicas distribute search workloads across the service. You need 2 or more to support high availability (applies to Basic and Standard only)."
+            }
+        },
+        "search.partitionCount": {
+            "type": "int",
+            "allowedValues": [
+                1,
+                2,
+                3,
+                4,
+                6,
+                12
+            ],
+            "defaultValue": 1,
+            "metadata": {
+                "description": "Partitions allow for scaling of document count as well as faster indexing by sharding your index over multiple Azure Search units."
+            }
+        },
+        "search.hostingMode": {
+            "type": "string",
+            "defaultValue": "default",
+            "allowedValues": [
+                "default",
+                "highDensity"
+            ],
+            "metadata": {
+                "description": "Applicable only for SKU set to standard3. You can set this property to enable a single, high density partition that allows up to 1000 indexes, which is much higher than the maximum indexes allowed for any other SKU."
+            }
+        },
+        "aadInstance":{
+            "type": "string",
+            "defaultValue": "https://login.microsoftonline.com/{0}"
+        },
+        "aadClientId":{
+            "type": "string"
+        }
+    },
+    "variables": {
+        "resource.appName": "[concat(parameters('appName'), '-',parameters('environment'))]",
+        "resource.storageName": "[replace(variables('resource.appName'), '-', '')]",
+        "resource.storageType": "Standard_LRS",
+        "resource.sqlServerName": "[variables('resource.appName')]",
+        "resource.sqlDatabaseName": "[concat(parameters('appName'), '-epi-', parameters('environment'))]",
+        "resource.sqlAdministratorLogin": "[concat(parameters('appName'), '-db-admin-', parameters('environment'))]",
+        "resource.appServiceName": "[variables('resource.appName')]" ,
+        "resource.eventhubName": "[variables('resource.appName')]",
+        "resource.appinsightsName": "[variables('resource.appName')]",
+        "resource.searchName": "[variables('resource.appName')]"
+    },
+    "resources": [
+        {
+            "name": "[variables('resource.eventhubName')]",
+            "type": "Microsoft.EventHub/namespaces",
+            "apiVersion": "2017-04-01",
+            "sku": {
+              "name": "Basic",
+              "tier": "Basic",
+              "capacity": 1
+            },
+            "kind": "EventHub",
+            "location": "[parameters('location')]",
+            "properties": {
+                "isAutoInflateEnabled": false
+            },
+            "tags": {}
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "name": "[variables('resource.storageName')]",
+            "location": "[parameters('location')]",
+            "apiVersion": "2015-06-15",
+            "properties": {
+                "accountType": "[variables('resource.storageType')]"
+            }
+        },
+        {
+            "type": "Microsoft.Sql/servers",
+            "name": "[variables('resource.sqlServerName')]",
+            "location": "[parameters('location')]",
+            "apiVersion": "2014-04-01-preview",
+            "properties": {
+                "version": "12.0",
+                "administratorLogin": "[variables('resource.sqlAdministratorLogin')]",
+                "administratorLoginPassword": "[parameters('resource.sqlAdministratorPassword')]"
+            },
+            "resources": [
+                {
+                    "type": "databases",
+                    "name": "[variables('resource.sqlDatabaseName')]",
+                    "location": "[parameters('location')]",
+                    "apiVersion": "2014-04-01-preview",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', variables('resource.sqlServerName'))]"
+                    ],
+                    "properties": {
+                        "edition": "Basic",
+                        "collation": "SQL_Latin1_General_CP1_CI_AS",
+                        "maxSizeBytes": "1073741824",
+                        "requestedServiceObjectiveId": "DD6D99BB-F193-4EC1-86F2-43D3BCCBC49C"
+                    }
+                },
+                {
+                    "type": "firewallrules",
+                    "name": "AllowAllWindowsAzureIps",
+                    "location": "[parameters('location')]",
+                    "apiVersion": "2014-04-01-preview",
+                    "dependsOn": [
+                        "[concat('Microsoft.Sql/servers/', variables('resource.sqlServerName'))]"
+                    ],
+                    "properties": {
+                        "endIpAddress": "0.0.0.0",
+                        "startIpAddress": "0.0.0.0"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "name": "[variables('resource.appServiceName')]",
+            "location": "[parameters('location')]",
+            "apiVersion": "2015-08-01",
+            "properties": {
+                "name": "[variables('resource.appServiceName')]",
+                "workerSize": "[parameters('resource.workerSize')]",
+                "numberOfWorkers": 1
+            },
+            "sku":{
+                "name": "[parameters('resource.sku.size')]",
+                "tier": "[parameters('resource.sku.tier')]",
+                "size": "[parameters('resource.sku.size')]"
+            }
+        },
+        {
+            "type": "microsoft.insights/components",
+            "kind": "web",
+            "name": "[variables('resource.appinsightsName')]",
+            "apiVersion": "2014-04-01",
+            "location": "[parameters('location')]",
+            "tags": {
+                "[concat('hidden-related:', resourceGroup().id, '/providers/Microsoft.Web/sites/', variables('resource.appServiceName'))]": "Resource"
+            },
+            "scale": null,
+            "properties": {
+                "ApplicationId": "[variables('resource.appinsightsName')]"
+            }
+        },
+        {
+            "apiVersion": "2015-08-19",
+            "name": "[variables('resource.searchName')]",
+            "type": "Microsoft.Search/searchServices",
+            "location": "[parameters('location')]",
+            "sku": {
+                "name": "[toLower(parameters('resource.sku.tier'))]"
+            },
+            "properties": {
+                "replicaCount": "[parameters('search.replicaCount')]",
+                "partitionCount": "[parameters('search.partitionCount')]",
+                "hostingMode": "[parameters('search.hostingMode')]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "name": "[variables('resource.appName')]",
+            "location": "[parameters('location')]",
+            "apiVersion": "2014-06-01",
+            "dependsOn": [
+                "[concat('Microsoft.Web/serverFarms/', variables('resource.appServiceName'))]",
+                "[concat('microsoft.insights/components/', variables('resource.appinsightsName'))]",
+                "[concat('Microsoft.Sql/servers/', variables('resource.sqlServerName'))]",
+                "[concat('Microsoft.Eventhub/namespaces/', variables('resource.eventhubName'))]",
+                "[concat('Microsoft.Search/searchServices/', variables('resource.searchName'))]"
+            ],
+            "tags": {
+                "[concat('hidden-related:', resourceGroup().id, '/providers/Microsoft.Web/serverfarms/', variables('resource.appServiceName'))]": "empty"
+            },
+            "properties": {
+                "name": "[variables('resource.appName')]",
+                "serverFarm": "[variables('resource.appServiceName')]",
+                "siteConfig": {
+                    "alwaysOn": "[parameters('siteConfig.alwaysOn')]",
+                    "webSocketsEnabled" : "[parameters('siteConfig.webSocketsEnabled')]",
+                    "use32BitWorkerProcess" : "[parameters('siteConfig.use32BitWorkerProcess')]",
+                    "appSettings": [
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY", 
+                            "value": "[reference(concat('microsoft.insights/components/', variables('resource.appinsightsName'))).InstrumentationKey]"
+                        },
+                        {
+                            "name": "episerver:EnvironmentName",
+                            "value": "[parameters('environmentName')]"
+                        },
+                        {
+                            "name": "ida:AADInstance",
+                            "value": "[parameters('aadInstance')]"
+                        },
+                        {
+                            "name": "ida:ClientId",
+                            "value": "[parameters('aadClientId')]"
+                        },
+                        {
+                            "name": "SearchService.Name",
+                            "value": "[variables('resource.searchName')]"
+                        },
+                        {
+                            "name": "SearchService.ApiKey",
+                            "value": "[listAdminKeys(resourceId('Microsoft.Search/searchServices', variables('resource.searchName')), '2015-08-19').PrimaryKey]"
+                        }
+                    ],
+                    "connectionStrings":[
+                        {
+                            "name":"EPiServerDB",
+                            "connectionString": "[concat('Data Source=tcp:', reference(concat('Microsoft.Sql/servers/', variables('resource.sqlServerName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('resource.sqlDatabaseName'), ';User Id=', variables('resource.sqlAdministratorLogin'), '@', variables('resource.sqlServerName'), ';Password=', parameters('resource.sqlAdministratorPassword'), ';MultipleActiveResultSets=True;Connection Timeout=30;Trusted_Connection=False;Encrypt=True;')]",
+                            "type": "SQLAzure"
+                        },
+                        {
+                            "name":"EPiServerAzureEvents",
+                            "connectionString": "[listKeys(resourceId('Microsoft.Eventhub/namespaces/authorizationRules', variables('resource.eventhubName'), 'RootManageSharedAccessKey'), '2014-09-01').primaryConnectionString]",
+                            "type": "custom"
+                        },
+                        {
+                            "name":"EPiServerAzureBlobs",
+                            "connectionString": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('resource.storageName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts/', variables('resource.storageName')), '2015-06-15').key1, ';EndpointSuffix=core.windows.net')]",
+                            "type": "custom"
+                        }
+                    ]    
+                }
+                
+            }
+        }
+        
+    ]
+}
